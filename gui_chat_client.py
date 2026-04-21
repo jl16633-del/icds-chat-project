@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import scrolledtext, simpledialog
+from tkinter import messagebox
 import threading
 import socket
 import json
@@ -8,7 +9,21 @@ from datetime import datetime
  
 from chat_utils import mysend, myrecv, SERVER, CHAT_PORT, S_OFFLINE, S_LOGGEDIN, S_CHATTING
 import client_state_machine as csm
- 
+
+import sys
+import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
+try:
+    from Gomoku.GUI import Chess_Board_Frame
+except ImportError:
+    try:
+        from GUI import Chess_Board_Frame
+    except ImportError as e:
+        print(f"Failed loading: {e}")
  
 def _now() -> str:
     return datetime.now().strftime("%H:%M")
@@ -31,6 +46,9 @@ class GUIClient:
         self.root.configure(bg="#1e1e2e")
  
         self._build_login_screen()
+        #Play button for the game
+        self.game_btn = tk.Button(self.root, text="Start Playing Gomoku", command=self.open_gomoku)
+        self.game_btn.pack(pady=5)
  
     # ─── Login screen ────────────────────────────────────────────────────────
  
@@ -446,7 +464,14 @@ class GUIClient:
             except Exception:
                 pass
         self.root.destroy()
-
+     
+     # -- Game ------------------------------------------------------------------
+ 
+    def open_gomoku(self):
+        game_window = tk.Toplevel(self.root) 
+        game_window.title("五子棋游戏")
+        self.gui_chess_board = Chess_Board_Frame(game_window)
+        self.gui_chess_board.pack()
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
