@@ -469,7 +469,7 @@ class GUIClient:
  
     def open_gomoku(self):
         game_window = tk.Toplevel(self.root) 
-        game_window.title("五子棋游戏")
+        game_window.title("Gomoku Game")
         self.gui_chess_board = Chess_Board_Frame(game_window)
         self.gui_chess_board.pack()
 
