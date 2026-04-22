@@ -13,6 +13,9 @@ import client_state_machine as csm
 import sys
 import os
 
+from ai_chatbot import AIChatBot
+ai_bot = AIChatBot()
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
@@ -406,7 +409,16 @@ class GUIClient:
             self.on_close()
             return
         self.input_var.set("")
- 
+
+        if text.startswith("@bot"):
+            user_question = text.replace("@bot", "").strip()
+            ai_response = ai_bot.get_response(user_question)
+
+            self._display_with_ts("self", f"[{self.name}] {text}")
+            self._display_with_ts("system", f"🤖 AI Bot: {ai_response['response']}")
+            self._display_with_ts("system", f"💖 Sentiment: {ai_response['sentiment']}")
+            return
+                           
         if self.sm.get_state() == S_CHATTING:
             self._display_with_ts("self", f"[{self.name}] {text}")
         else:
