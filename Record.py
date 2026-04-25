@@ -24,7 +24,6 @@ class Step_Record_Chess_Board:
 
     def check_row(self, x, y):
         if self.has_record(x, y) and self.has_record(x, y+1) and self.has_record(x, y+2) and self.has_record(x, y+3) and self.has_record(x, y+4):
-            #判断一个子右侧是否5个连续有子,如果是判断是否连续的黑色或者白色,返回1或者2代表胜利
             if self.records[x][y].color == 1 and self.records[x][y+1].color == 1 and self.records[x][y+2].color == 1 and self.records[x][y+3].color == 1 and self.records[x][y+4].color == 1:
                 return 1;
 
@@ -95,3 +94,4 @@ class Step_Record_Chess_Board:
                 result = self.check_down(i, j)
                 if result != 0:
                     return result
+        return 0
