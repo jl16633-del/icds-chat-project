@@ -16,6 +16,12 @@ import os
 from ai_chatbot import AIChatBot
 ai_bot = AIChatBot()
 
+import requests
+import urllib.parse
+from io import BytesIO
+from PIL import Image, ImageTk
+import threading
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
@@ -42,7 +48,9 @@ class GUIClient:
         self.sm = None
         self.name = ""
         self.running = False
- 
+
+        self.image_cache = []
+     
         self.root.title("ICDS Chat")
         self.root.geometry("680x600")
         self.root.minsize(500, 400)          # now resizable
@@ -409,6 +417,14 @@ class GUIClient:
             self.on_close()
             return
         self.input_var.set("")
+     
+        #--AI Picture Generation------------------------------------------------------------
+        if text.startswith("/aipic:"):
+            prompt = text[7:].strip()
+            if prompt:
+                self._display_with_ts("self", f"[{self.name}] 🎨 AI Picture Generation: {prompt}")
+                self.handle_aipic(prompt)
+            return
 
         if text.startswith("@bot"):
             user_question = text.replace("@bot", "").strip()
@@ -437,17 +453,40 @@ class GUIClient:
  
     # ─── Receive loop ─────────────────────────────────────────────────────────
  
-    def _recv_loop(self):
+     def _recv_loop(self):
         while self.running:
             try:
                 peer_msg = myrecv(self.socket)
                 if not peer_msg:
                     break
+                try:
+                    msg_data = json.loads(peer_msg)
+                    action = msg_data.get("action")
+                    if action in ["game_move", "game_request", "game_accept", "game_reject"]:
+                        if action == "game_move":
+                            x, y = msg_data["location"]
+                            if hasattr(self, 'gui_chess_board') and self.gui_chess_board:
+                                self.root.after(0, lambda i=x, j=y: self.gui_chess_board.chess_board_canvas.draw_remote_move(i, j))
+                        
+                        elif action == "game_request":
+                            self.root.after(0, self.handle_game_request)
+                            
+                        elif action == "game_accept":
+                            self.root.after(0, self.handle_game_accept)
+                            
+                        elif action == "game_reject":
+                            from tkinter import messagebox
+                            self.root.after(0, lambda: messagebox.showinfo("邀请结果", "对方残忍地拒绝了你的游戏邀请。"))
+                            
+                        continue
+                except Exception:
+                    pass 
+                # --------------------------------------
+
             except Exception:
                 if self.running:
                     self._display_with_ts("error", "Connection lost.")
                 break
- 
             out = self.sm.proc("", peer_msg)
  
             if out:
@@ -478,12 +517,96 @@ class GUIClient:
         self.root.destroy()
      
      # -- Game ------------------------------------------------------------------
- 
+    def send_msg(self, msg_obj):
+        import json
+        mysend(self.socket, json.dumps(msg_obj))
+    
     def open_gomoku(self):
-        game_window = tk.Toplevel(self.root) 
-        game_window.title("Gomoku Game")
-        self.gui_chess_board = Chess_Board_Frame(game_window)
+        if self.sm.get_state() != S_CHATTING:
+            choice = messagebox.askyesno("Single player mode", "No friends connected！\nOpen Single player mode？")
+            if choice:
+                self.launch_single_player()
+            return
+         
+        choice = messagebox.askyesnocancel("Choose mode", "【Yes】 Invite the other player\n【No】 Start single player mode")
+        if choice is None:
+            return
+            
+        if choice:  
+            self.send_msg({"action": "game_request"})
+            messagebox.showinfo("Request sent", "Waiting...")
+        else: 
+            self.launch_single_player()
+
+    def handle_game_request(self):
+        choice = messagebox.askyesno("Game invitation", "Your friend is inviting you to play the Gomoku, Do you want to accept?")
+        if choice:
+            self.send_msg({"action": "game_accept"}) 
+            self.launch_multiplayer()             
+        else:
+            self.send_msg({"action": "game_reject"})
+
+    def handle_game_accept(self):
+        messagebox.showinfo("Accept", "Your friend has accepted the invitation, game starts!")
+        self.launch_multiplayer()
+
+    def launch_single_player(self):
+        game_window = tk.Toplevel(self.root)
+        game_window.title("Gomoku - Single Player mode")
+        self.gui_chess_board = Chess_Board_Frame(game_window, network_client=None)
         self.gui_chess_board.pack()
+
+    def launch_multiplayer(self):
+        game_window = tk.Toplevel(self.root)
+        game_window.title("Gomoku - Multiplayer mode")
+        self.gui_chess_board = Chess_Board_Frame(game_window, network_client=self)
+        self.gui_chess_board.pack()
+     
+    def _listen(self):
+        while self.running:
+            try:
+                raw_msg = myrecv(self.socket)
+                if not raw_msg:
+                    break
+                
+                msg = json.loads(raw_msg)
+                if msg.get("action") == "game_move":
+                    x, y = msg["location"]
+                    if hasattr(self, 'gui_chess_board'):
+                        self.root.after(0, lambda: self.gui_chess_board.chess_board_canvas.draw_remote_move(x, y))
+            except Exception as e:
+                print(f"Listen error: {e}")
+                break
+             
+# --AI Picture Generation--------------------------------------------------
+    def handle_aipic(self, prompt):
+        self._display_with_ts("system", f"🎨 Picture is being generated: '{prompt}', Please wait...")
+        threading.Thread(target=self._fetch_and_display_image, args=(prompt,), daemon=True).start()
+
+    def _fetch_and_display_image(self, prompt):
+        try:
+            safe_prompt = urllib.parse.quote(prompt)
+            url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=400&height=400&nologo=true"
+            
+            response = requests.get(url, timeout=15)
+            if response.status_code == 200:
+                image_data = Image.open(BytesIO(response.content))
+                image_data.thumbnail((300, 300))
+                photo = ImageTk.PhotoImage(image_data)
+                self.image_cache.append(photo)
+                self.root.after(0, lambda p=photo: self._insert_image_to_chat(p))
+            else:
+                self.root.after(0, lambda: self._display_with_ts("error", "❌ Failed, Please try later。"))
+        except Exception as e:
+            self.root.after(0, lambda: self._display_with_ts("error", f"❌ Inernet Error: {e}"))
+
+    def _insert_image_to_chat(self, photo):
+        self.chat_transcript.config(state=tk.NORMAL)
+        self.chat_transcript.insert(tk.END, "\n[AI Generated Picture]:\n")
+        self.chat_transcript.image_create(tk.END, image=photo)
+        self.chat_transcript.insert(tk.END, "\n\n")
+        self.chat_transcript.see(tk.END)
+        self.chat_transcript.config(state=tk.DISABLED)
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
