@@ -143,6 +143,12 @@ class Server:
                     mysend(to_sock, json.dumps({"action": "exchange", "from": msg["from"], "message": msg["message"]}))
 
                     # ---- end of your code --- #
+            elif msg["action"] in ["game_move", "game_request", "game_accept", "game_reject"]:
+                from_name = self.logged_sock2name[from_sock]
+                the_guys = self.group.list_me(from_name)[1:]
+                for peer in the_guys:
+                    to_sock = self.logged_name2sock[peer]
+                    mysend(to_sock, json.dumps(msg))
 
 # ==============================================================================
 # the "from" guy has had enough (talking to "to")!
