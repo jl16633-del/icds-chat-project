@@ -453,7 +453,7 @@ class GUIClient:
  
     # ─── Receive loop ─────────────────────────────────────────────────────────
  
-     def _recv_loop(self):
+    def _recv_loop(self):
         while self.running:
             try:
                 peer_msg = myrecv(self.socket)
