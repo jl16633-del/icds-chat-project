@@ -587,8 +587,11 @@ class GUIClient:
         try:
             safe_prompt = urllib.parse.quote(prompt)
             url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=400&height=400&nologo=true"
+            print(f"[DEBUG] Request URL: {url}")
             
-            response = requests.get(url, timeout=15)
+            response = requests.get(url, timeout=30)
+            print(f"[DEBUG] Response status: {response.status_code}")
+            
             if response.status_code == 200:
                 image_data = Image.open(BytesIO(response.content))
                 image_data.thumbnail((300, 300))
@@ -596,17 +599,19 @@ class GUIClient:
                 self.image_cache.append(photo)
                 self.root.after(0, lambda p=photo: self._insert_image_to_chat(p))
             else:
-                self.root.after(0, lambda: self._display_with_ts("error", "❌ Failed, Please try later。"))
+                print(f"[DEBUG] Response body: {response.text[:200]}")
+                self.root.after(0, lambda: self._display_with_ts("error", f"❌ Failed, status code: {response.status_code}"))
         except Exception as e:
-            self.root.after(0, lambda: self._display_with_ts("error", f"❌ Inernet Error: {e}"))
-
+            print(f"[DEBUG] Exception: {type(e).__name__}: {e}")
+            self.root.after(0, lambda: self._display_with_ts("error", f"❌ Network error: {e}"))
+            
     def _insert_image_to_chat(self, photo):
-        self.chat_transcript.config(state=tk.NORMAL)
-        self.chat_transcript.insert(tk.END, "\n[AI Generated Picture]:\n")
-        self.chat_transcript.image_create(tk.END, image=photo)
-        self.chat_transcript.insert(tk.END, "\n\n")
-        self.chat_transcript.see(tk.END)
-        self.chat_transcript.config(state=tk.DISABLED)
+        self.msg_area.config(state="normal")
+        self.msg_area.insert("end", "\n[AI Generated Picture]:\n")
+        self.msg_area.image_create("end", image=photo)
+        self.msg_area.insert("end", "\n\n")
+        self.msg_area.see("end")
+        self.msg_area.config(state="disabled")
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
