@@ -21,7 +21,6 @@ import requests
 import urllib.parse
 from io import BytesIO
 from PIL import Image, ImageTk
-import threading
 
 from nlp_tools import extract_keywords_yake, summarize_with_sumy
 
@@ -174,7 +173,7 @@ class GUIClient:
  
         self.state_label = tk.Label(
             top, text="logged in",
-            font=("Helvetica", 14),  # 原10 -> 14
+            font=("Helvetica", 14),
             bg="#181825", fg="#6c7086"
         )
         self.state_label.pack(side="left", padx=12)
@@ -365,19 +364,50 @@ class GUIClient:
         self.input_entry.pack(side="left", fill="x", expand=True, padx=15)
         self.input_entry.bind("<Return>", lambda e: self._on_send())
         self.input_entry.focus()
+
+        btn_frame = tk.Frame(bottom, bg="#181825")
+        btn_frame.pack(side="right", padx=(0,15))
+        
+        tk.Button(
+            btn_frame, text="Analyze Emotion",
+            font=("Helvetica", 13, "bold"),
+            bg="#a6e3a1", fg="#1e1e2e",
+            activebackground="#94e2d5",
+            relief="flat", bd=0, padx=12, pady=8,
+            cursor="hand2",
+            command=self.analyze_sentiment
+        ).pack(side="left", padx=(0, 8))
  
         tk.Button(
-            bottom, text="Send",
+            btn_frame, text="Send",
             font=("Helvetica", 14, "bold"), 
             bg="#89b4fa", fg="#1e1e2e",
             activebackground="#74c7ec",
             relief="flat", bd=0, padx=20, pady=8,  
             cursor="hand2",
             command=self._on_send
-        ).pack(side="right", padx=(0, 15))
+        ).pack(side="left")
  
         self._display("system", f"[{_now()}] Connected! Type or use the buttons above.\n")
- 
+    
+    def analyze_sentiment(self):
+        text = self.input_var.get().strip()
+        if not text:
+            self._display_with_ts("error", "[Emotion] Please enter text first.")
+            return
+            
+        self._display_with_ts("self", f"[{self.name}] {text}")
+        self.input_var.set("") 
+
+        def _do_analyze():
+            try:
+                res = ai_bot.get_response(text)
+                self.root.after(0, lambda: self._display_with_ts("system", f"🤖 AI Bot: {res['response']}"))
+                self.root.after(0, lambda: self._display_with_ts("system", f"💖 Sentiment: {res['sentiment']}"))
+            except Exception as e:
+                self.root.after(0, lambda: self._display_with_ts("error", f"❌ AI 响应出错 (Ollama 开了吗？): {e}"))
+
+        threading.Thread(target=_do_analyze, daemon=True).start()
     # ─── Display ─────────────────────────────────────────────────────────────
  
     def _display(self, tag: str, text: str):
@@ -517,20 +547,26 @@ class GUIClient:
                 self._display_with_ts("self", f"[{self.name}] 🎨 AI Picture Generation: {prompt}")
                 self.handle_aipic(prompt)
             return
-
+        
         if text.startswith("@bot"):
             user_question = text.replace("@bot", "").strip()
-            ai_response = ai_bot.get_response(user_question)
             
             user_msg = f"[{self.name}] {text}"
-            bot_msg = f"🤖 AI Bot: {ai_response['response']}"
-            
             self._display_with_ts("self", user_msg)
-            self._display_with_ts("system", bot_msg)
-            self._display_with_ts("system", f"💖 Sentiment: {ai_response['sentiment']}")
-            
             self.chat_history.append(user_msg)
-            self.chat_history.append(bot_msg)
+        
+            def _ask_bot():
+                try:
+                    ai_response = ai_bot.get_response(user_question)
+                    bot_msg = f"🤖 AI Bot: {ai_response['response']}"
+                    
+                    self.root.after(0, lambda: self._display_with_ts("system", bot_msg))
+                    self.root.after(0, lambda: self._display_with_ts("system", f"💖 Sentiment: {ai_response['sentiment']}"))
+                    self.chat_history.append(bot_msg)
+                except Exception as e:
+                    self.root.after(0, lambda: self._display_with_ts("error", f"❌ 呼叫 AI 失败 (后台服务异常): {e}"))
+
+            threading.Thread(target=_ask_bot, daemon=True).start()
             return
                            
         if self.sm.get_state() == S_CHATTING:
@@ -670,7 +706,7 @@ class GUIClient:
     def _fetch_and_display_image(self, prompt):
         try:
             safe_prompt = urllib.parse.quote(prompt)
-            url = f"[image.pollinations.ai](https://image.pollinations.ai/prompt/{safe_prompt}?width=400&height=400&nologo=true)"
+            url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=400&height=400&nologo=true"
             print(f"[DEBUG] Request URL: {url}")
             response = requests.get(url, timeout=30)
             print(f"[DEBUG] Response status: {response.status_code}")
