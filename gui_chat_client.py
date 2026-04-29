@@ -318,18 +318,42 @@ class GUIClient:
         self.input_entry.pack(side="left", fill="x", expand=True, padx=10)
         self.input_entry.bind("<Return>", lambda e: self._on_send())
         self.input_entry.focus()
+
+        btn_frame = tk.Frame(bottom, bg="#181825")
+        btn_frame.pack(side="right", padx=(0,10))
+        
+        tk.Button(
+            bottom, text="Analyze Emotion",
+            font=("Helvetica", 10),
+            bg="#a6e3a1", fg="#1e1e2e",
+            activebackground="#94e2d5",
+            relief="flat", bd=0, padx=8, pady=4,
+            cursor="hand2",
+            command=self.analyze_sentiment
+        ).pack(side="left", padx=3)
  
         tk.Button(
             bottom, text="Send",
-            font=("Helvetica", 11, "bold"),
+            font=("Helvetica", 10, "bold"),
             bg="#89b4fa", fg="#1e1e2e",
             activebackground="#74c7ec",
-            relief="flat", bd=0, padx=15, pady=4,
+            relief="flat", bd=0, padx=8, pady=4,
             cursor="hand2",
             command=self._on_send
-        ).pack(side="right", padx=(0, 10))
+        ).pack(side="left", padx=3)
  
         self._display("system", f"[{_now()}] Connected! Type or use the buttons above.\n")
+    
+    def analyze_sentiment(self):
+        text = self.input_var.get().strip()
+        if not text:
+            self._display_with_ts("error", "[Emotion] Please enter text first.")
+            return
+        res = ai_bot.get_response(text)
+        self._display_with_ts("self", f"[{self.name}] {text}")
+        self._display_with_ts("system", f"🤖 AI Bot: {res['response']}")
+        self._display_with_ts("system", f"💖 Sentiment: {res['sentiment']}")
+        self.input_var.set("")
  
     # ─── Display ─────────────────────────────────────────────────────────────
  
