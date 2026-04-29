@@ -449,6 +449,12 @@ class GUIClient:
                 self._display_with_ts("self", f"[{self.name}] 🎨 AI Picture Generation: {prompt}")
                 self.handle_aipic(prompt)
             return
+        
+        self._display_with_ts("self", f"[{self.name}] {text}")
+        ai_response = ai_bot.get_response(text)
+        self._display_with_ts("system", f"🤖 AI Bot: {ai_response['response']}")
+        self._display_with_ts("system", f"💖 Sentiment: {ai_response['sentiment']}")
+        return
 
         if text.startswith("@bot"):
             user_question = text.replace("@bot", "").strip()
