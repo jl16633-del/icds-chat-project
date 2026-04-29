@@ -1,4 +1,5 @@
 from chat_bot_client import ChatBotClient
+from sentiment_tools import analyze_sentiment
 
 class AIChatBot:
     def __init__(self):
@@ -30,10 +31,14 @@ class AIChatBot:
     def get_response(self, user_input):
         raw_reply = self.bot.chat(user_input)
         final_reply = self._apply_personality(raw_reply)
+
+        sentiment_label, sentiment_emoji = analyze_sentiment(user_input)
+        sentiment = sentiment_label.lower()
+
         self._update_history(user_input, final_reply)
         return {
             "response": final_reply,
-            "sentiment": "neutral"
+            "sentiment": sentiment
         }
 
     def clear_context(self):
