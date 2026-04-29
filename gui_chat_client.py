@@ -6,6 +6,7 @@ import socket
 import json
 import argparse
 from datetime import datetime
+import tkinter.font as tkFont
  
 from chat_utils import mysend, myrecv, SERVER, CHAT_PORT, S_OFFLINE, S_LOGGEDIN, S_CHATTING
 import client_state_machine as csm
@@ -20,7 +21,8 @@ import requests
 import urllib.parse
 from io import BytesIO
 from PIL import Image, ImageTk
-import threading
+
+from nlp_tools import extract_keywords_yake, summarize_with_sumy
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -50,16 +52,25 @@ class GUIClient:
         self.running = False
 
         self.image_cache = []
+        self.chat_history = [] 
+
+        # 统一字体设置 - 全部放大
+        default_font = tkFont.nametofont("TkDefaultFont")
+        default_font.configure(size=18) 
+        text_font = tkFont.nametofont("TkTextFont")
+        text_font.configure(size=18)   
+        fixed_font = tkFont.nametofont("TkFixedFont")
+        fixed_font.configure(size=18)    
      
         self.root.title("ICDS Chat")
-        self.root.geometry("680x600")
-        self.root.minsize(500, 400)          # now resizable
+        self.root.geometry("1000x800") 
+        self.root.minsize(800, 600)
         self.root.configure(bg="#1e1e2e")
  
         self._build_login_screen()
-        #Play button for the game
-        self.game_btn = tk.Button(self.root, text="Start Playing Gomoku", command=self.open_gomoku)
-        self.game_btn.pack(pady=5)
+        self.game_btn = tk.Button(self.root, text="Start Playing Gomoku", command=self.open_gomoku,
+                                 font=("Helvetica", 16, "bold")) 
+        self.game_btn.pack(pady=10)
  
     # ─── Login screen ────────────────────────────────────────────────────────
  
@@ -69,41 +80,42 @@ class GUIClient:
  
         tk.Label(
             self.login_frame, text="ICDS Chat",
-            font=("Helvetica", 24, "bold"),
+            font=("Helvetica", 32, "bold"),  
             bg="#1e1e2e", fg="#cdd6f4"
-        ).pack(pady=(40, 6))
+        ).pack(pady=(50, 10))
  
         tk.Label(
             self.login_frame, text="Enter your nickname",
-            font=("Helvetica", 11),
+            font=("Helvetica", 16), 
             bg="#1e1e2e", fg="#6c7086"
-        ).pack(pady=(0, 20))
+        ).pack(pady=(0, 30))
  
         self.name_var = tk.StringVar()
         entry = tk.Entry(
             self.login_frame, textvariable=self.name_var,
-            font=("Helvetica", 13), width=22,
+            font=("Helvetica", 18), 
+            width=25,  
             bg="#313244", fg="#cdd6f4",
             insertbackground="#cdd6f4",
             relief="flat", bd=6
         )
-        entry.pack(pady=4)
+        entry.pack(pady=10)
         entry.focus()
         entry.bind("<Return>", lambda e: self._do_login())
  
         tk.Button(
             self.login_frame, text="Join",
-            font=("Helvetica", 12, "bold"),
+            font=("Helvetica", 16, "bold"), 
             bg="#89b4fa", fg="#1e1e2e",
             activebackground="#74c7ec",
-            relief="flat", bd=0, padx=20, pady=6,
+            relief="flat", bd=0, padx=30, pady=10,  
             cursor="hand2",
             command=self._do_login
-        ).pack(pady=12)
+        ).pack(pady=20)
  
         self.login_status = tk.Label(
             self.login_frame, text="",
-            font=("Helvetica", 10),
+            font=("Helvetica", 14),  
             bg="#1e1e2e", fg="#f38ba8"
         )
         self.login_status.pack()
@@ -150,41 +162,42 @@ class GUIClient:
         self.root.title(f"ICDS Chat  —  {self.name}")
  
         # ── top bar ──
-        top = tk.Frame(self.root, bg="#181825", pady=8)
+        top = tk.Frame(self.root, bg="#181825", pady=10)
         top.pack(fill="x")
  
         tk.Label(
             top, text=f"  ● {self.name}",
-            font=("Helvetica", 12, "bold"),
+            font=("Helvetica", 16, "bold"),  
             bg="#181825", fg="#a6e3a1"
         ).pack(side="left")
  
         self.state_label = tk.Label(
             top, text="logged in",
-            font=("Helvetica", 10),
+            font=("Helvetica", 14),
             bg="#181825", fg="#6c7086"
         )
-        self.state_label.pack(side="left", padx=8)
+        self.state_label.pack(side="left", padx=12)
  
         # ── toolbar ──
-        toolbar = tk.Frame(self.root, bg="#181825", pady=6)
+        toolbar = tk.Frame(self.root, bg="#181825", pady=8)
         toolbar.pack(fill="x")
  
         # left group: info commands
         left_group = tk.Frame(toolbar, bg="#181825")
-        left_group.pack(side="left", padx=8)
+        left_group.pack(side="left", padx=12)
  
         for label, cmd in [("Who", "who"), ("Time", "time")]:
             tk.Button(
                 left_group, text=label,
-                font=("Helvetica", 9, "bold"),
+                font=("Helvetica", 12, "bold"), 
                 bg="#45475a", fg="#cdd6f4", activebackground="#585b70",
-                relief="flat", bd=0, padx=10, pady=3, cursor="hand2",
+                relief="flat", bd=0, padx=15, pady=6,  
+                cursor="hand2",
                 command=lambda c=cmd: self._send_quick_cmd(c)
-            ).pack(side="left", padx=(0, 4))
+            ).pack(side="left", padx=(0, 6))
  
         # separator
-        tk.Frame(toolbar, bg="#45475a", width=1).pack(side="left", fill="y", padx=6)
+        tk.Frame(toolbar, bg="#45475a", width=2).pack(side="left", fill="y", padx=8)
  
         # middle group: connect
         mid_group = tk.Frame(toolbar, bg="#181825")
@@ -192,22 +205,24 @@ class GUIClient:
  
         tk.Button(
             mid_group, text="Connect to…",
-            font=("Helvetica", 9, "bold"),
+            font=("Helvetica", 12, "bold"), 
             bg="#a6e3a1", fg="#1e1e2e", activebackground="#94d5a0",
-            relief="flat", bd=0, padx=10, pady=3, cursor="hand2",
+            relief="flat", bd=0, padx=15, pady=6,  
+            cursor="hand2",
             command=self._open_connect_dialog
-        ).pack(side="left", padx=(0, 4))
+        ).pack(side="left", padx=(0, 6))
  
         tk.Button(
             mid_group, text="Leave chat",
-            font=("Helvetica", 9, "bold"),
+            font=("Helvetica", 12, "bold"), 
             bg="#f38ba8", fg="#1e1e2e", activebackground="#e07090",
-            relief="flat", bd=0, padx=10, pady=3, cursor="hand2",
+            relief="flat", bd=0, padx=15, pady=6,  
+            cursor="hand2",
             command=lambda: self._send_quick_cmd("bye")
-        ).pack(side="left", padx=(0, 4))
+        ).pack(side="left", padx=(0, 6))
  
         # separator
-        tk.Frame(toolbar, bg="#45475a", width=1).pack(side="left", fill="y", padx=6)
+        tk.Frame(toolbar, bg="#45475a", width=2).pack(side="left", fill="y", padx=8)
  
         # right group: poem
         right_group = tk.Frame(toolbar, bg="#181825")
@@ -216,77 +231,108 @@ class GUIClient:
         self.poem_var = tk.StringVar(value="18")
         tk.Entry(
             right_group, textvariable=self.poem_var,
-            font=("Helvetica", 9), width=4,
+            font=("Helvetica", 12),  
+            width=5,
             bg="#313244", fg="#cdd6f4",
             insertbackground="#cdd6f4",
             relief="flat", bd=4
-        ).pack(side="left", padx=(0, 4))
+        ).pack(side="left", padx=(0, 6))
  
         tk.Button(
             right_group, text="Poem",
-            font=("Helvetica", 9, "bold"),
+            font=("Helvetica", 12, "bold"), 
             bg="#45475a", fg="#cdd6f4", activebackground="#585b70",
-            relief="flat", bd=0, padx=10, pady=3, cursor="hand2",
+            relief="flat", bd=0, padx=15, pady=6,  
+            cursor="hand2",
             command=self._send_poem
         ).pack(side="left")
+
+        # ── separator ──
+        tk.Frame(toolbar, bg="#45475a", width=2).pack(side="left", fill="y", padx=8)
+
+        # ── NLP group (Bonus Topic 2) ─────────────────────────────────────────
+        nlp_group = tk.Frame(toolbar, bg="#181825")
+        nlp_group.pack(side="left")
+
+        tk.Button(
+            nlp_group, text="keywords",
+            font=("Helvetica", 12, "bold"),  
+            bg="#cba6f7", fg="#1e1e2e", activebackground="#b48fd4",
+            relief="flat", bd=0, padx=15, pady=6, 
+            cursor="hand2",
+            command=self._run_keywords
+        ).pack(side="left", padx=(0, 6))
+
+        tk.Button(
+            nlp_group, text="summary",
+            font=("Helvetica", 12, "bold"), 
+            bg="#cba6f7", fg="#1e1e2e", activebackground="#b48fd4",
+            relief="flat", bd=0, padx=15, pady=6, 
+            cursor="hand2",
+            command=self._run_summary
+        ).pack(side="left")
+        # ─────────────────────────────────────────────────────────────────────
  
         # ── search bar ──
-        search_bar = tk.Frame(self.root, bg="#181825", pady=4)
+        search_bar = tk.Frame(self.root, bg="#181825", pady=6)
         search_bar.pack(fill="x")
  
         tk.Label(
             search_bar, text="  Search history:",
-            font=("Helvetica", 9), bg="#181825", fg="#6c7086"
+            font=("Helvetica", 12), 
+            bg="#181825", fg="#6c7086"
         ).pack(side="left")
  
         self.search_var = tk.StringVar()
         tk.Entry(
             search_bar, textvariable=self.search_var,
-            font=("Helvetica", 10), width=18,
+            font=("Helvetica", 14), 
+            width=20,
             bg="#313244", fg="#cdd6f4",
             insertbackground="#cdd6f4",
             relief="flat", bd=4
-        ).pack(side="left", padx=4)
+        ).pack(side="left", padx=6)
  
         tk.Button(
             search_bar, text="Search",
-            font=("Helvetica", 9, "bold"),
+            font=("Helvetica", 12, "bold"), 
             bg="#45475a", fg="#cdd6f4", activebackground="#585b70",
-            relief="flat", bd=0, padx=8, pady=2, cursor="hand2",
+            relief="flat", bd=0, padx=12, pady=4, 
+            cursor="hand2",
             command=self._send_search
         ).pack(side="left")
  
         # ── visual divider ──
-        tk.Frame(self.root, bg="#313244", height=1).pack(fill="x")
+        tk.Frame(self.root, bg="#313244", height=2).pack(fill="x")
  
         # ── message area ──
         self.msg_area = scrolledtext.ScrolledText(
             self.root,
-            font=("Helvetica", 12),
+            font=("Helvetica", 16),  
             bg="#1e1e2e", fg="#cdd6f4",
             insertbackground="#cdd6f4",
             relief="flat", bd=0,
             state="disabled",
             wrap="word",
-            padx=12, pady=8
+            padx=16, pady=12  
         )
         self.msg_area.pack(fill="both", expand=True)
  
         self.msg_area.tag_config("self",      foreground="#89b4fa")
         self.msg_area.tag_config("peer",      foreground="#cdd6f4")
         self.msg_area.tag_config("system",    foreground="#6c7086",
-                                 font=("Helvetica", 10, "italic"))
+                                 font=("Helvetica", 14, "italic"))  
         self.msg_area.tag_config("error",     foreground="#f38ba8")
         self.msg_area.tag_config("timestamp", foreground="#45475a",
-                                 font=("Helvetica", 9))
+                                 font=("Helvetica", 12)) 
  
         # ── visual divider ──
-        tk.Frame(self.root, bg="#313244", height=1).pack(fill="x")
+        tk.Frame(self.root, bg="#313244", height=2).pack(fill="x")
  
         # ── emoji + input ──
         self.emoji_menu = tk.Menu(
             self.root, tearoff=0,
-            bg="#313244", fg="#cdd6f4", font=("Helvetica", 12)
+            bg="#313244", fg="#cdd6f4", font=("Helvetica", 16)  
         )
         for emj in ["(❁´◡`❁)", "(⌐■_■)", "(╯°□°）╯︵ ┻━┻",
                     "¯\\_(ツ)_/¯", "ʕ•ᴥ•ʔ", "✧( ु•⌄• )", "(ಥ﹏ಥ)"]:
@@ -294,53 +340,53 @@ class GUIClient:
                 label=emj, command=lambda e=emj: self._insert_emoji(e)
             )
  
-        bottom = tk.Frame(self.root, bg="#181825", pady=8)
+        bottom = tk.Frame(self.root, bg="#181825", pady=12)
         bottom.pack(fill="x", side="bottom")
  
         tk.Button(
             bottom, text="😊",
-            font=("Helvetica", 12),
+            font=("Helvetica", 16),  
             bg="#45475a", fg="#cdd6f4",
             activebackground="#585b70",
-            relief="flat", bd=0, padx=10, pady=4,
+            relief="flat", bd=0, padx=15, pady=8, 
             cursor="hand2",
             command=self._show_emoji_menu
-        ).pack(side="left", padx=(10, 0))
+        ).pack(side="left", padx=(15, 0))
  
         self.input_var = tk.StringVar()
         self.input_entry = tk.Entry(
             bottom, textvariable=self.input_var,
-            font=("Helvetica", 12),
+            font=("Helvetica", 16),  
             bg="#313244", fg="#cdd6f4",
             insertbackground="#cdd6f4",
             relief="flat", bd=6
         )
-        self.input_entry.pack(side="left", fill="x", expand=True, padx=10)
+        self.input_entry.pack(side="left", fill="x", expand=True, padx=15)
         self.input_entry.bind("<Return>", lambda e: self._on_send())
         self.input_entry.focus()
 
         btn_frame = tk.Frame(bottom, bg="#181825")
-        btn_frame.pack(side="right", padx=(0,10))
+        btn_frame.pack(side="right", padx=(0,15))
         
         tk.Button(
-            bottom, text="Analyze Emotion",
-            font=("Helvetica", 10),
+            btn_frame, text="Analyze Emotion",
+            font=("Helvetica", 13, "bold"),
             bg="#a6e3a1", fg="#1e1e2e",
             activebackground="#94e2d5",
-            relief="flat", bd=0, padx=8, pady=4,
+            relief="flat", bd=0, padx=12, pady=8,
             cursor="hand2",
             command=self.analyze_sentiment
-        ).pack(side="left", padx=3)
+        ).pack(side="left", padx=(0, 8))
  
         tk.Button(
-            bottom, text="Send",
-            font=("Helvetica", 10, "bold"),
+            btn_frame, text="Send",
+            font=("Helvetica", 14, "bold"), 
             bg="#89b4fa", fg="#1e1e2e",
             activebackground="#74c7ec",
-            relief="flat", bd=0, padx=8, pady=4,
+            relief="flat", bd=0, padx=20, pady=8,  
             cursor="hand2",
             command=self._on_send
-        ).pack(side="left", padx=3)
+        ).pack(side="left")
  
         self._display("system", f"[{_now()}] Connected! Type or use the buttons above.\n")
     
@@ -349,16 +395,22 @@ class GUIClient:
         if not text:
             self._display_with_ts("error", "[Emotion] Please enter text first.")
             return
-        res = ai_bot.get_response(text)
+            
         self._display_with_ts("self", f"[{self.name}] {text}")
-        self._display_with_ts("system", f"🤖 AI Bot: {res['response']}")
-        self._display_with_ts("system", f"💖 Sentiment: {res['sentiment']}")
-        self.input_var.set("")
- 
+        self.input_var.set("") 
+
+        def _do_analyze():
+            try:
+                res = ai_bot.get_response(text)
+                self.root.after(0, lambda: self._display_with_ts("system", f"🤖 AI Bot: {res['response']}"))
+                self.root.after(0, lambda: self._display_with_ts("system", f"💖 Sentiment: {res['sentiment']}"))
+            except Exception as e:
+                self.root.after(0, lambda: self._display_with_ts("error", f"❌ AI 响应出错 (Ollama 开了吗？): {e}"))
+
+        threading.Thread(target=_do_analyze, daemon=True).start()
     # ─── Display ─────────────────────────────────────────────────────────────
  
     def _display(self, tag: str, text: str):
-        """Thread-safe append. Timestamps are embedded in text already."""
         def _do():
             self.msg_area.config(state="normal")
             self.msg_area.insert("end", text, tag)
@@ -367,7 +419,6 @@ class GUIClient:
         self.root.after(0, _do)
  
     def _display_with_ts(self, tag: str, text: str):
-        """Prepend a muted timestamp then the message in its own colour."""
         def _do():
             self.msg_area.config(state="normal")
             self.msg_area.insert("end", f"[{_now()}] ", "timestamp")
@@ -396,7 +447,6 @@ class GUIClient:
     # ─── Toolbar actions ─────────────────────────────────────────────────────
  
     def _send_quick_cmd(self, cmd: str):
-        """Silently inject a command as if the user typed it."""
         self._display_with_ts("self", f"> {cmd}")
         out = self.sm.proc(cmd, "")
         if out:
@@ -422,7 +472,6 @@ class GUIClient:
             self._display_with_ts("error", "[Error] Please enter a keyword to search.")
  
     def _open_connect_dialog(self):
-        """Pop up a small dialog asking for a name to connect to."""
         target = simpledialog.askstring(
             "Connect to user",
             "Enter the username to connect to:",
@@ -430,6 +479,46 @@ class GUIClient:
         )
         if target and target.strip():
             self._send_quick_cmd(f"c {target.strip()}")
+
+    # ─── NLP actions (Bonus Topic 2) ─────────────────────────────────────────
+
+    def _run_keywords(self):
+        if not self.chat_history:
+            self._display_with_ts("system", "📭 No chat history to analyze yet.")
+            return
+        self._display_with_ts("system", "🔍 Extracting keywords…")
+        threading.Thread(target=self._do_keywords, daemon=True).start()
+
+    def _do_keywords(self):
+        try:
+            keywords = extract_keywords_yake(self.chat_history, top_k=5)
+            if keywords:
+                result = "🏷️ Keywords:  " + "  |  ".join(keywords)
+            else:
+                result = "🏷️ Keywords: (no result)"
+        except Exception as e:
+            result = f"❌ Keywords error: {e}"
+        self._display_with_ts("system", result)
+
+    def _run_summary(self):
+        if not self.chat_history:
+            self._display_with_ts("system", "📭 No chat history to analyze yet.")
+            return
+        self._display_with_ts("system", "📝 Generating summary…")
+        threading.Thread(target=self._do_summary, daemon=True).start()
+
+    def _do_summary(self):
+        try:
+            sentences = summarize_with_sumy(self.chat_history, sentences_count=3)
+            if sentences:
+                result = "📋 Summary:\n" + "\n".join(f"  • {s}" for s in sentences)
+            else:
+                result = "📋 Summary: (not enough content to summarize)"
+        except Exception as e:
+            result = f"❌ Summary error: {e}"
+        self._display_with_ts("system", result)
+
+    # ─────────────────────────────────────────────────────────────────────────
  
     # ─── Send ─────────────────────────────────────────────────────────────────
  
@@ -441,8 +530,17 @@ class GUIClient:
             self.on_close()
             return
         self.input_var.set("")
-     
-        #--AI Picture Generation------------------------------------------------------------
+
+        # ── Bonus Topic 2: NLP commands via keyboard ──────────────────────────
+        if text.strip() == "/keywords":
+            self._run_keywords()
+            return
+        if text.strip() == "/summary":
+            self._run_summary()
+            return
+        # ─────────────────────────────────────────────────────────────────────
+
+        # ── Bonus Topic 1: AI picture generation ─────────────────────────────
         if text.startswith("/aipic:"):
             prompt = text[7:].strip()
             if prompt:
@@ -450,25 +548,36 @@ class GUIClient:
                 self.handle_aipic(prompt)
             return
         
-        self._display_with_ts("self", f"[{self.name}] {text}")
-        ai_response = ai_bot.get_response(text)
-        self._display_with_ts("system", f"🤖 AI Bot: {ai_response['response']}")
-        self._display_with_ts("system", f"💖 Sentiment: {ai_response['sentiment']}")
-        return
-
         if text.startswith("@bot"):
             user_question = text.replace("@bot", "").strip()
-            ai_response = ai_bot.get_response(user_question)
+            
+            user_msg = f"[{self.name}] {text}"
+            self._display_with_ts("self", user_msg)
+            self.chat_history.append(user_msg)
+        
+            def _ask_bot():
+                try:
+                    ai_response = ai_bot.get_response(user_question)
+                    bot_msg = f"🤖 AI Bot: {ai_response['response']}"
+                    
+                    self.root.after(0, lambda: self._display_with_ts("system", bot_msg))
+                    self.root.after(0, lambda: self._display_with_ts("system", f"💖 Sentiment: {ai_response['sentiment']}"))
+                    self.chat_history.append(bot_msg)
+                except Exception as e:
+                    self.root.after(0, lambda: self._display_with_ts("error", f"❌ 呼叫 AI 失败 (后台服务异常): {e}"))
 
-            self._display_with_ts("self", f"[{self.name}] {text}")
-            self._display_with_ts("system", f"🤖 AI Bot: {ai_response['response']}")
-            self._display_with_ts("system", f"💖 Sentiment: {ai_response['sentiment']}")
+            threading.Thread(target=_ask_bot, daemon=True).start()
             return
                            
         if self.sm.get_state() == S_CHATTING:
-            self._display_with_ts("self", f"[{self.name}] {text}")
+            msg_text = f"[{self.name}] {text}"
+            self._display_with_ts("self", msg_text)
+            self.chat_history.append(msg_text)      
         else:
-            self._display_with_ts("self", f"> {text}")
+            msg_text = f"> {text}"
+            self._display_with_ts("self", msg_text)
+
+            self.chat_history.append(msg_text)
  
         out = self.sm.proc(text, "")
         if out:
@@ -497,26 +606,21 @@ class GUIClient:
                             x, y = msg_data["location"]
                             if hasattr(self, 'gui_chess_board') and self.gui_chess_board:
                                 self.root.after(0, lambda i=x, j=y: self.gui_chess_board.chess_board_canvas.draw_remote_move(i, j))
-                        
                         elif action == "game_request":
                             self.root.after(0, self.handle_game_request)
-                            
                         elif action == "game_accept":
                             self.root.after(0, self.handle_game_accept)
-                            
                         elif action == "game_reject":
-                            from tkinter import messagebox
                             self.root.after(0, lambda: messagebox.showinfo("邀请结果", "对方残忍地拒绝了你的游戏邀请。"))
-                            
                         continue
                 except Exception:
-                    pass 
-                # --------------------------------------
+                    pass
 
             except Exception:
                 if self.running:
                     self._display_with_ts("error", "Connection lost.")
                 break
+
             out = self.sm.proc("", peer_msg)
  
             if out:
@@ -526,6 +630,8 @@ class GUIClient:
                     action = ""
                 tag = "peer" if action == "exchange" else "system"
                 self._display_with_ts(tag, out)
+                if tag == "peer":
+                    self.chat_history.append(out)      
  
             self._refresh_state_label()
  
@@ -546,9 +652,9 @@ class GUIClient:
                 pass
         self.root.destroy()
      
-     # -- Game ------------------------------------------------------------------
+    # ─── Game ─────────────────────────────────────────────────────────────────
+
     def send_msg(self, msg_obj):
-        import json
         mysend(self.socket, json.dumps(msg_obj))
     
     def open_gomoku(self):
@@ -561,7 +667,6 @@ class GUIClient:
         choice = messagebox.askyesnocancel("Choose mode", "【Yes】 Invite the other player\n【No】 Start single player mode")
         if choice is None:
             return
-            
         if choice:  
             self.send_msg({"action": "game_request"})
             messagebox.showinfo("Request sent", "Waiting...")
@@ -592,25 +697,10 @@ class GUIClient:
         self.gui_chess_board = Chess_Board_Frame(game_window, network_client=self)
         self.gui_chess_board.pack()
      
-    def _listen(self):
-        while self.running:
-            try:
-                raw_msg = myrecv(self.socket)
-                if not raw_msg:
-                    break
-                
-                msg = json.loads(raw_msg)
-                if msg.get("action") == "game_move":
-                    x, y = msg["location"]
-                    if hasattr(self, 'gui_chess_board'):
-                        self.root.after(0, lambda: self.gui_chess_board.chess_board_canvas.draw_remote_move(x, y))
-            except Exception as e:
-                print(f"Listen error: {e}")
-                break
-             
-# --AI Picture Generation--------------------------------------------------
+    # ─── Bonus Topic 1: AI Picture Generation ────────────────────────────────
+
     def handle_aipic(self, prompt):
-        self._display_with_ts("system", f"🎨 Picture is being generated: '{prompt}', Please wait...")
+        self._display_with_ts("system", f"🎨 Picture is being generated: '{prompt}', Please wait…")
         threading.Thread(target=self._fetch_and_display_image, args=(prompt,), daemon=True).start()
 
     def _fetch_and_display_image(self, prompt):
@@ -618,10 +708,8 @@ class GUIClient:
             safe_prompt = urllib.parse.quote(prompt)
             url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=400&height=400&nologo=true"
             print(f"[DEBUG] Request URL: {url}")
-            
             response = requests.get(url, timeout=30)
             print(f"[DEBUG] Response status: {response.status_code}")
-            
             if response.status_code == 200:
                 image_data = Image.open(BytesIO(response.content))
                 image_data.thumbnail((300, 300))
