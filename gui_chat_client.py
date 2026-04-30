@@ -54,6 +54,7 @@ class GUIClient:
         self.image_cache = []
         self.chat_history = []
         self.bot_in_chat = False
+        self.bot_persona = "a helpful assistant"  # Default persona
 
         # Unified font settings - scale up everything
         default_font = tkFont.nametofont("TkDefaultFont")
@@ -64,7 +65,7 @@ class GUIClient:
         fixed_font.configure(size=18)    
      
         self.root.title("ICDS Chat")
-        self.root.geometry("1050x800") 
+        self.root.geometry("1100x800") 
         self.root.minsize(800, 600)
         self.root.configure(bg="#1e1e2e")
  
@@ -526,6 +527,12 @@ class GUIClient:
 
         if text.strip() == "/keywords": self._run_keywords(); return
         if text.strip() == "/summary": self._run_summary(); return
+        
+        # 💡 NEW: Intercept /persona command to switch personality
+        if text.startswith("/persona "): 
+            self.bot_persona = text.replace("/persona ", "").strip()
+            self._display_with_ts("system", f"🎭 Bot personality changed to: {self.bot_persona}")
+            return
 
         is_bot_msg = self.bot_in_chat or text.startswith("@bot")
         
@@ -555,14 +562,21 @@ class GUIClient:
         try:
             self.root.after(0, lambda: self._display_with_ts("system", "⏳ AI is processing..."))
             
-            # Call your AI bot interface here
-            ai_response = ai_bot.get_response(text)
+            # 💡 NEW: Inject Context (Chat History) & Personality into the prompt
+            recent_history = "\n".join(self.chat_history[-8:])
+            prompt = (
+                f"You are a chatbot in a multi-user chatroom. "
+                f"Your current personality/role is: {self.bot_persona}. "
+                f"Respond in character.\n\n"
+                f"Recent chat history for context:\n{recent_history}\n\n"
+                f"Now, reply to this new message: {text}"
+            )
+            
+            ai_response = ai_bot.get_response(prompt)
             sentiment = ai_response.get('sentiment', 'Unknown')
             
-            # Step 1: Print sentiment analysis for the message, regardless of bot mode
             self.root.after(0, lambda: self._display_with_ts("system", f"💖 Sentiment: {sentiment}"))
 
-            # Step 2: If the user is talking to the bot, print the bot's reply and send it to the chat
             if is_bot_msg:
                 bot_reply = ai_response.get('response', '')
                 full_bot_msg = f"🤖 [AI Bot]: {bot_reply}"
@@ -616,8 +630,20 @@ class GUIClient:
                     action = ""
                 tag = "peer" if action == "exchange" else "system"
                 self._display_with_ts(tag, out)
+                
                 if tag == "peer":
-                    self.chat_history.append(out)      
+                    self.chat_history.append(out)
+                    
+                    # 💡 NEW: Multi-client Group Chat Bonus - Listen to peer's @bot messages
+                    if self.bot_in_chat and "@bot" in out.lower():
+                        # Extract message content to pass to AI, removing peer tags like [Bob] @bot hello
+                        import re
+                        clean_msg = re.sub(r'^\[.*?\]\s*', '', out) # Remove [Username]
+                        clean_msg = clean_msg.replace("@bot", "").strip()
+                        if not clean_msg:
+                            clean_msg = "hello"
+                        
+                        threading.Thread(target=self._process_text_with_ai, args=(clean_msg, True), daemon=True).start()
  
             self._refresh_state_label()
  
