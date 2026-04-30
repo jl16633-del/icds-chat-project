@@ -52,9 +52,10 @@ class GUIClient:
         self.running = False
 
         self.image_cache = []
-        self.chat_history = [] 
+        self.chat_history = []
+        self.bot_in_chat = False
 
-        # 统一字体设置 - 全部放大
+        # Unified font settings - scale up everything
         default_font = tkFont.nametofont("TkDefaultFont")
         default_font.configure(size=18) 
         text_font = tkFont.nametofont("TkTextFont")
@@ -63,7 +64,7 @@ class GUIClient:
         fixed_font.configure(size=18)    
      
         self.root.title("ICDS Chat")
-        self.root.geometry("1000x800") 
+        self.root.geometry("1050x800") 
         self.root.minsize(800, 600)
         self.root.configure(bg="#1e1e2e")
  
@@ -272,7 +273,20 @@ class GUIClient:
             command=self._run_summary
         ).pack(side="left")
         # ─────────────────────────────────────────────────────────────────────
- 
+
+        bot_group = tk.Frame(toolbar, bg="#181825")
+        bot_group.pack(side="left")
+
+        self.bot_btn = tk.Button(
+            bot_group, text="🤖 Bot: OFF",
+            font=("Helvetica", 12, "bold"),
+            bg="#fab387", fg="#1e1e2e", activebackground="#f9e2af",
+            relief="flat", bd=0, padx=15, pady=6,
+            cursor="hand2",
+            command=self._toggle_bot_invite
+        )
+        self.bot_btn.pack(side="left", padx=(0, 6))
+        
         # ── search bar ──
         search_bar = tk.Frame(self.root, bg="#181825", pady=6)
         search_bar.pack(fill="x")
@@ -381,24 +395,6 @@ class GUIClient:
  
         self._display("system", f"[{_now()}] Connected! Type or use the buttons above.\n")
     
-    def analyze_sentiment(self):
-        text = self.input_var.get().strip()
-        if not text:
-            self._display_with_ts("error", "[Emotion] Please enter text first.")
-            return
-            
-        self._display_with_ts("self", f"[{self.name}] {text}")
-        self.input_var.set("") 
-
-        def _do_analyze():
-            try:
-                res = ai_bot.get_response(text)
-                self.root.after(0, lambda: self._display_with_ts("system", f"🤖 AI Bot: {res['response']}"))
-                self.root.after(0, lambda: self._display_with_ts("system", f"💖 Sentiment: {res['sentiment']}"))
-            except Exception as e:
-                self.root.after(0, lambda: self._display_with_ts("error", f"❌ AI 响应出错 (Ollama 开了吗？): {e}"))
-
-        threading.Thread(target=_do_analyze, daemon=True).start()
     # ─── Display ─────────────────────────────────────────────────────────────
  
     def _display(self, tag: str, text: str):
@@ -512,85 +508,73 @@ class GUIClient:
     # ─────────────────────────────────────────────────────────────────────────
  
     # ─── Send ─────────────────────────────────────────────────────────────────
+    def _toggle_bot_invite(self):
+        self.bot_in_chat = not self.bot_in_chat
+        status = "ON" if self.bot_in_chat else "OFF"
+        color = "#a6e3a1" if self.bot_in_chat else "#fab387"
+        self.bot_btn.config(text=f"🤖 Bot: {status}", bg=color)
+        
+        msg = "🤖 Bot has joined the chat!" if self.bot_in_chat else "🤖 Bot has left."
+        self._display_with_ts("system", msg)
+        if self.sm.get_state() == S_CHATTING:
+             self.sm.proc(msg, "")
+
     def _on_send(self):
         text = self.input_var.get().strip()
-        if not text:
-            return
-
-        # 清空输入框
+        if not text: return
         self.input_var.set("")
 
-        # 自动调用 AI + 情感分析
-        def _do():
-            try:
-                res = ai_bot.get_response(text)
-                self._display_with_ts("self", f"[{self.name}] {text}")
-                self._display_with_ts("system", f"🤖 Bot: {res['response']}")
-                self._display_with_ts("system", f"💖 Sentiment: {res['sentiment']}")
-            except Exception as e:
-                self._display_with_ts("error", f"❌ Error: {e}")
+        if text.strip() == "/keywords": self._run_keywords(); return
+        if text.strip() == "/summary": self._run_summary(); return
 
-        threading.Thread(target=_do, daemon=True).start()
-
-
-        # ── Bonus Topic 2: NLP commands via keyboard ──────────────────────────
-        if text.strip() == "/keywords":
-            self._run_keywords()
-            return
-        if text.strip() == "/summary":
-            self._run_summary()
-            return
-        # ─────────────────────────────────────────────────────────────────────
-
-        # ── Bonus Topic 1: AI picture generation ─────────────────────────────
-        if text.startswith("/aipic:"):
-            prompt = text[7:].strip()
-            if prompt:
-                self._display_with_ts("self", f"[{self.name}] 🎨 AI Picture Generation: {prompt}")
-                self.handle_aipic(prompt)
-            return
+        is_bot_msg = self.bot_in_chat or text.startswith("@bot")
         
-        if text.startswith("@bot"):
-            user_question = text.replace("@bot", "").strip()
-            
-            user_msg = f"[{self.name}] {text}"
-            self._display_with_ts("self", user_msg)
-            self.chat_history.append(user_msg)
+        # Send message to state machine/network
+        out = self.sm.proc(text, "") 
         
-            def _ask_bot():
-                try:
-                    ai_response = ai_bot.get_response(user_question)
-                    bot_msg = f"🤖 AI Bot: {ai_response['response']}"
-                    
-                    self.root.after(0, lambda: self._display_with_ts("system", bot_msg))
-                    self.root.after(0, lambda: self._display_with_ts("system", f"💖 Sentiment: {ai_response['sentiment']}"))
-                    self.chat_history.append(bot_msg)
-                except Exception as e:
-                    self.root.after(0, lambda: self._display_with_ts("error", f"❌ 呼叫 AI 失败 (后台服务异常): {e}"))
-
-            threading.Thread(target=_ask_bot, daemon=True).start()
-            return
-                           
-        if self.sm.get_state() == S_CHATTING:
-            msg_text = f"[{self.name}] {text}"
-            self._display_with_ts("self", msg_text)
-            self.chat_history.append(msg_text)      
-        else:
-            msg_text = f"> {text}"
-            self._display_with_ts("self", msg_text)
-
-            self.chat_history.append(msg_text)
- 
-        out = self.sm.proc(text, "")
+        # Display in own window
+        msg_text = f"[{self.name}] {text}"
+        self._display_with_ts("self", msg_text)
+        self.chat_history.append(msg_text)
+        
+        # Display state machine feedback (and block the spammy menu in bot mode)
         if out:
-            self._display_with_ts("system", out)
- 
-        if self.sm.get_state() == S_OFFLINE or "See you next time" in (out or ""):
-            self._display_with_ts("system", "[System] Closing connection…")
-            self.root.after(1000, self.on_close)
-            return
- 
-        self._refresh_state_label()
+            if is_bot_msg and "++++ Choose one of the following commands" in out:
+                pass 
+            else:
+                self._display_with_ts("system", out)
+
+        # Clean up potential @bot prefix to get pure text for AI processing
+        user_content = text.replace("@bot", "").strip() if text.startswith("@bot") else text
+        if not user_content: user_content = "hello"
+
+        # Start background thread for sentiment analysis (and get bot reply if triggered)
+        threading.Thread(target=self._process_text_with_ai, args=(user_content, is_bot_msg), daemon=True).start()
+    
+    def _process_text_with_ai(self, text, is_bot_msg):
+        try:
+            self.root.after(0, lambda: self._display_with_ts("system", "⏳ AI is processing..."))
+            
+            # Call your AI bot interface here
+            ai_response = ai_bot.get_response(text)
+            sentiment = ai_response.get('sentiment', 'Unknown')
+            
+            # Step 1: Print sentiment analysis for the message, regardless of bot mode
+            self.root.after(0, lambda: self._display_with_ts("system", f"💖 Sentiment: {sentiment}"))
+
+            # Step 2: If the user is talking to the bot, print the bot's reply and send it to the chat
+            if is_bot_msg:
+                bot_reply = ai_response.get('response', '')
+                full_bot_msg = f"🤖 [AI Bot]: {bot_reply}"
+
+                if self.sm.get_state() == S_CHATTING:
+                    self.sm.proc(full_bot_msg, "")
+                
+                self.root.after(0, lambda: self._display_with_ts("system", full_bot_msg))
+                self.chat_history.append(full_bot_msg)
+                
+        except Exception as e:
+            self.root.after(0, lambda: self._display_with_ts("error", f"❌ AI/Sentiment error: {e}"))
  
     # ─── Receive loop ─────────────────────────────────────────────────────────
  
@@ -613,7 +597,7 @@ class GUIClient:
                         elif action == "game_accept":
                             self.root.after(0, self.handle_game_accept)
                         elif action == "game_reject":
-                            self.root.after(0, lambda: messagebox.showinfo("邀请结果", "对方残忍地拒绝了你的游戏邀请。"))
+                            self.root.after(0, lambda: messagebox.showinfo("Invitation Result", "The other player cruelly rejected your game invitation."))
                         continue
                 except Exception:
                     pass
@@ -658,15 +642,15 @@ class GUIClient:
 
     def send_msg(self, msg_obj):
         mysend(self.socket, json.dumps(msg_obj))
-    
+     
     def open_gomoku(self):
         if self.sm.get_state() != S_CHATTING:
-            choice = messagebox.askyesno("Single player mode", "No friends connected！\nOpen Single player mode？")
+            choice = messagebox.askyesno("Single player mode", "No friends connected!\nOpen Single player mode?")
             if choice:
                 self.launch_single_player()
             return
          
-        choice = messagebox.askyesnocancel("Choose mode", "【Yes】 Invite the other player\n【No】 Start single player mode")
+        choice = messagebox.askyesnocancel("Choose mode", "[Yes] Invite the other player\n[No] Start single player mode")
         if choice is None:
             return
         if choice:  
@@ -676,7 +660,7 @@ class GUIClient:
             self.launch_single_player()
 
     def handle_game_request(self):
-        choice = messagebox.askyesno("Game invitation", "Your friend is inviting you to play the Gomoku, Do you want to accept?")
+        choice = messagebox.askyesno("Game invitation", "Your friend is inviting you to play Gomoku. Do you want to accept?")
         if choice:
             self.send_msg({"action": "game_accept"}) 
             self.launch_multiplayer()             
