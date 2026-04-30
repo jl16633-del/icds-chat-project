@@ -368,15 +368,6 @@ class GUIClient:
         btn_frame = tk.Frame(bottom, bg="#181825")
         btn_frame.pack(side="right", padx=(0,15))
         
-        tk.Button(
-            btn_frame, text="Analyze Emotion",
-            font=("Helvetica", 13, "bold"),
-            bg="#a6e3a1", fg="#1e1e2e",
-            activebackground="#94e2d5",
-            relief="flat", bd=0, padx=12, pady=8,
-            cursor="hand2",
-            command=self.analyze_sentiment
-        ).pack(side="left", padx=(0, 8))
  
         tk.Button(
             btn_frame, text="Send",
@@ -521,15 +512,26 @@ class GUIClient:
     # ─────────────────────────────────────────────────────────────────────────
  
     # ─── Send ─────────────────────────────────────────────────────────────────
- 
     def _on_send(self):
         text = self.input_var.get().strip()
-        if not text or not self.sm:
+        if not text:
             return
-        if self.sm.get_state() == S_OFFLINE:
-            self.on_close()
-            return
+
+        # 清空输入框
         self.input_var.set("")
+
+        # 自动调用 AI + 情感分析
+        def _do():
+            try:
+                res = ai_bot.get_response(text)
+                self._display_with_ts("self", f"[{self.name}] {text}")
+                self._display_with_ts("system", f"🤖 Bot: {res['response']}")
+                self._display_with_ts("system", f"💖 Sentiment: {res['sentiment']}")
+            except Exception as e:
+                self._display_with_ts("error", f"❌ Error: {e}")
+
+        threading.Thread(target=_do, daemon=True).start()
+
 
         # ── Bonus Topic 2: NLP commands via keyboard ──────────────────────────
         if text.strip() == "/keywords":
