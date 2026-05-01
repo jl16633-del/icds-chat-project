@@ -74,24 +74,25 @@ class Step_Record_Chess_Board:
         for i in range(15):
             for j in range(11):
                 result = self.check_row(i, j)
-                if result != 0:
+                if result == 1 or result == 2:
                     return result
 
         for i in range(11):
             for j in range(15):
                 result = self.check_col(i, j)
-                if result != 0:
+                if result == 1 or result == 2:
                     return result
 
         for i in range(11):
             for j in range(11):
                 result = self.check_up(i, j)
-                if result != 0:
+                if result == 1 or result == 2:
                     return result
 
         for i in range(11):
             for j in range(4, 15):
                 result = self.check_down(i, j)
-                if result != 0:
+                if result == 1 or result == 2:
                     return result
+
         return 0
