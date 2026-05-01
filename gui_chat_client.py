@@ -70,10 +70,6 @@ class GUIClient:
         self.root.configure(bg="#1e1e2e")
  
         self._build_login_screen()
-        self.game_btn = tk.Button(self.root, text="Start Playing Gomoku", command=self.open_gomoku,
-                                 font=("Helvetica", 16, "bold")) 
-        self.game_btn.pack(pady=10)
- 
     # ─── Login screen ────────────────────────────────────────────────────────
  
     def _build_login_screen(self):
@@ -395,6 +391,11 @@ class GUIClient:
         ).pack(side="left")
  
         self._display("system", f"[{_now()}] Connected! Type or use the buttons above.\n")
+     
+        self.game_btn = tk.Button(self.root, text="Start Playing Gomoku", command=self.open_gomoku,
+                                 font=("Helvetica", 16, "bold")) 
+        self.game_btn.pack(pady=10)
+ 
     
     # ─── Display ─────────────────────────────────────────────────────────────
  
