@@ -529,13 +529,23 @@ class GUIClient:
         if not text: return
         self.input_var.set("")
 
+        # --- Command interception ---
         if text.strip() == "/keywords": self._run_keywords(); return
         if text.strip() == "/summary": self._run_summary(); return
         
-        # 💡 NEW: Intercept /persona command to switch personality
+        # Change bot personality
         if text.startswith("/persona "): 
             self.bot_persona = text.replace("/persona ", "").strip()
             self._display_with_ts("system", f"🎭 Bot personality changed to: {self.bot_persona}")
+            return
+
+        # 💡 NEW: AI Picture trigger
+        if text.startswith("/aipic "):
+            pic_prompt = text.replace("/aipic ", "").strip()
+            if pic_prompt:
+                self.handle_aipic(pic_prompt)
+            else:
+                self._display_with_ts("error", "❌ Please enter a prompt, e.g., /aipic a cute cat")
             return
 
         is_bot_msg = self.bot_in_chat or text.startswith("@bot")
@@ -548,20 +558,23 @@ class GUIClient:
         self._display_with_ts("self", msg_text)
         self.chat_history.append(msg_text)
         
-        # Display state machine feedback (and block the spammy menu in bot mode)
+        # Display state machine feedback
         if out:
             if is_bot_msg and "++++ Choose one of the following commands" in out:
                 pass 
             else:
                 self._display_with_ts("system", out)
 
-        # Clean up potential @bot prefix to get pure text for AI processing
-        user_content = text.replace("@bot", "").strip() if text.startswith("@bot") else text
-        if not user_content: user_content = "hello"
+        # 💡 Trigger AI and Sentiment Analysis ONLY when in Chatting state
+        from chat_utils import S_CHATTING
+        if self.sm.get_state() == S_CHATTING:
+            # Clean up potential @bot prefix to get pure text for AI processing
+            user_content = text.replace("@bot", "").strip() if text.startswith("@bot") else text
+            if not user_content: user_content = "hello"
 
-        # Start background thread for sentiment analysis (and get bot reply if triggered)
-        threading.Thread(target=self._process_text_with_ai, args=(user_content, is_bot_msg), daemon=True).start()
-    
+            # Start background thread for sentiment analysis
+            threading.Thread(target=self._process_text_with_ai, args=(user_content, is_bot_msg), daemon=True).start()
+            
     def _process_text_with_ai(self, text, is_bot_msg):
         try:
             self.root.after(0, lambda: self._display_with_ts("system", "⏳ AI is processing..."))
