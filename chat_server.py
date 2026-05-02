@@ -32,6 +32,7 @@ class Server:
         self.indices = {}
         # sonnet
         self.sonnet = indexer.PIndex("AllSonnets.txt")
+        self.scoreboard = {}
 
     def new_client(self, sock):
         # add to all sockets and to new clients
@@ -149,6 +150,14 @@ class Server:
                 for peer in the_guys:
                     to_sock = self.logged_name2sock[peer]
                     mysend(to_sock, json.dumps(msg))
+            
+            elif msg["action"] == "report_win":
+                from_name = self.logged_sock2name[from_sock]
+                self.scoreboard[from_name] = self.scoreboard.get(from_name, 0) + 1
+                sorted_rank = sorted(self.scoreboard.items(), key=lambda x: x[1], reverse=True)
+                b_msg = json.dumps({"action": "leaderboard", "data": sorted_rank})
+                for sock in self.logged_name2sock.values():
+                    mysend(sock, b_msg)
 
 # ==============================================================================
 # the "from" guy has had enough (talking to "to")!
