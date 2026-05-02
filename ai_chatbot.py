@@ -28,14 +28,15 @@ class AIChatBot:
             self.conversation_history.pop(0)
             self.conversation_history.pop(0)
 
-    def get_response(self, user_input):
+    def get_response(self, user_input, raw_text=None):
         raw_reply = self.bot.chat(user_input)
         final_reply = self._apply_personality(raw_reply)
 
-        sentiment_label, sentiment_emoji = analyze_sentiment(user_input)
+        text_to_analyze = raw_text if raw_text else user_input
+        sentiment_label, sentiment_emoji = analyze_sentiment(text_to_analyze)
         sentiment = sentiment_label.lower()
 
-        self._update_history(user_input, final_reply)
+        self._update_history(text_to_analyze, final_reply)
         return {
             "response": final_reply,
             "sentiment": sentiment

@@ -566,7 +566,6 @@ class GUIClient:
         try:
             self.root.after(0, lambda: self._display_with_ts("system", "⏳ AI is processing..."))
             
-            # 💡 NEW: Inject Context (Chat History) & Personality into the prompt
             recent_history = "\n".join(self.chat_history[-8:])
             prompt = (
                 f"You are a chatbot in a multi-user chatroom. "
@@ -575,8 +574,9 @@ class GUIClient:
                 f"Recent chat history for context:\n{recent_history}\n\n"
                 f"Now, reply to this new message: {text}"
             )
+          
+            ai_response = ai_bot.get_response(prompt, raw_text=text)
             
-            ai_response = ai_bot.get_response(prompt)
             sentiment = ai_response.get('sentiment', 'Unknown')
             
             self.root.after(0, lambda: self._display_with_ts("system", f"💖 Sentiment: {sentiment}"))
