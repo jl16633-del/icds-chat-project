@@ -29,7 +29,7 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 try:
-    from Gomoku.GUI import Chess_Board_Frame
+    from GUI import Chess_Board_Frame
 except ImportError:
     try:
         from GUI import Chess_Board_Frame
@@ -70,6 +70,10 @@ class GUIClient:
         self.root.configure(bg="#1e1e2e")
  
         self._build_login_screen()
+        #self.game_btn = tk.Button(self.root, text="Start Playing Gomoku", command=self.open_gomoku,
+                                 #font=("Helvetica", 16, "bold")) 
+        #self.game_btn.pack(pady=10)
+ 
     # ─── Login screen ────────────────────────────────────────────────────────
  
     def _build_login_screen(self):
@@ -391,11 +395,10 @@ class GUIClient:
         ).pack(side="left")
  
         self._display("system", f"[{_now()}] Connected! Type or use the buttons above.\n")
-     
+
         self.game_btn = tk.Button(self.root, text="Start Playing Gomoku", command=self.open_gomoku,
                                  font=("Helvetica", 16, "bold")) 
         self.game_btn.pack(pady=10)
- 
     
     # ─── Display ─────────────────────────────────────────────────────────────
  
@@ -602,7 +605,7 @@ class GUIClient:
                 try:
                     msg_data = json.loads(peer_msg)
                     action = msg_data.get("action")
-                    if action in ["game_move", "game_request", "game_accept", "game_reject"]:
+                    if action in ["game_move", "game_request", "game_accept", "game_reject", "leaderboard"]:
                         if action == "game_move":
                             x, y = msg_data["location"]
                             if hasattr(self, 'gui_chess_board') and self.gui_chess_board:
@@ -613,6 +616,11 @@ class GUIClient:
                             self.root.after(0, self.handle_game_accept)
                         elif action == "game_reject":
                             self.root.after(0, lambda: messagebox.showinfo("Invitation Result", "The other player cruelly rejected your game invitation."))
+                        elif action == "leaderboard":
+                            board_data = msg_data["data"]
+                            board_str = "\n".join([f"🏅 Rank {i+1}: {k} - {v} wins" for i, (k,v) in enumerate(board_data)])
+                            rank_msg = f"\n🏆 --- GOMOKU MASTER BOARD --- 🏆\n{board_str}\n"
+                            self.root.after(0, lambda: self._display_with_ts("system", rank_msg))
                         continue
                 except Exception:
                     pass
@@ -701,13 +709,13 @@ class GUIClient:
     def launch_single_player(self):
         game_window = tk.Toplevel(self.root)
         game_window.title("Gomoku - Single Player mode")
-        self.gui_chess_board = Chess_Board_Frame(game_window, network_client=None)
+        self.gui_chess_board = Chess_Board_Frame(game_window, network_client=self, is_multiplayer=False)
         self.gui_chess_board.pack()
 
     def launch_multiplayer(self):
         game_window = tk.Toplevel(self.root)
         game_window.title("Gomoku - Multiplayer mode")
-        self.gui_chess_board = Chess_Board_Frame(game_window, network_client=self)
+        self.gui_chess_board = Chess_Board_Frame(game_window, network_client=self, is_multiplayer=True)
         self.gui_chess_board.pack()
      
     # ─── Bonus Topic 1: AI Picture Generation ────────────────────────────────
