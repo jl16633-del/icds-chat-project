@@ -539,15 +539,16 @@ class GUIClient:
             self._display_with_ts("system", f"🎭 Bot personality changed to: {self.bot_persona}")
             return
 
-        # 💡 NEW: AI Picture trigger
+        # AI Picture trigger
         if text.startswith("/aipic "):
             pic_prompt = text.replace("/aipic ", "").strip()
             if pic_prompt:
                 self.handle_aipic(pic_prompt)
             else:
-                self._display_with_ts("error", "❌ Please enter a prompt, e.g., /aipic a cute cat")
+                self._display_with_ts("error", "❌ Please enter a prompt, e.g., /aipic a cyberpunk city")
             return
 
+        # Check if the user is explicitly talking to the bot
         is_bot_msg = self.bot_in_chat or text.startswith("@bot")
         
         # Send message to state machine/network
@@ -558,23 +559,30 @@ class GUIClient:
         self._display_with_ts("self", msg_text)
         self.chat_history.append(msg_text)
         
-        # Display state machine feedback
+        # Display state machine feedback (ignore raw poem menus if bot is handling it)
         if out:
             if is_bot_msg and "++++ Choose one of the following commands" in out:
                 pass 
             else:
                 self._display_with_ts("system", out)
 
-        # 💡 Trigger AI and Sentiment Analysis ONLY when in Chatting state
-        from chat_utils import S_CHATTING
-        if self.sm.get_state() == S_CHATTING:
+        # --- Trigger AI and Sentiment Analysis ---
+        from chat_utils import S_CHATTING, S_LOGGEDIN
+        current_state = self.sm.get_state()
+        
+        # Allow AI to work both in the lobby (S_LOGGEDIN) and in a private chat (S_CHATTING)
+        if current_state in [S_CHATTING, S_LOGGEDIN]:
             # Clean up potential @bot prefix to get pure text for AI processing
             user_content = text.replace("@bot", "").strip() if text.startswith("@bot") else text
             if not user_content: user_content = "hello"
 
-            # Start background thread for sentiment analysis
+            # If in the lobby and not talking to the bot, skip sentiment analysis to save resources
+            if current_state == S_LOGGEDIN and not is_bot_msg:
+                return
+
+            # Start background thread for AI & Sentiment analysis
             threading.Thread(target=self._process_text_with_ai, args=(user_content, is_bot_msg), daemon=True).start()
-            
+                     
     def _process_text_with_ai(self, text, is_bot_msg):
         try:
             self.root.after(0, lambda: self._display_with_ts("system", "⏳ AI is processing..."))
